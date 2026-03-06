@@ -380,6 +380,177 @@ function MerchantAnalysis({ transactions, darkMode }) {
   );
 }
 
+// ─── Fraud Alerts Ticker Component ───────────────────────────────────────────
+function FraudAlertsTicker({ transactions, darkMode }) {
+  const processedTxns = transactions.filter(t => t.status === "done" && t.flaggedAsFraud);
+  if (processedTxns.length === 0) return null;
+
+  const [currentPage, setCurrentPage] = useState(0);
+  const alertsPerPage = 5;
+  const totalPages = Math.ceil(processedTxns.length / alertsPerPage);
+  
+  const startIndex = (totalPages - 1 - currentPage) * alertsPerPage;
+  const endIndex = Math.min(startIndex + alertsPerPage, processedTxns.length);
+  const currentAlerts = processedTxns.slice(startIndex, endIndex).reverse();
+
+  const handleNext = () => {
+    if (currentPage < totalPages - 1) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const handlePrev = () => {
+    if (currentPage > 0) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  return (
+    <div style={{
+      background: darkMode ? "#0f172a" : "#f1f5f9", 
+      border: "1px solid #1e293b", 
+      borderRadius: 12, 
+      padding: 20,
+      marginTop: 20,
+      gridColumn: "1 / -1",
+    }}>
+      <div style={{ fontSize: 11, color: darkMode ? "#475569" : "#64748b", letterSpacing: "0.1em", marginBottom: 16 }}>
+        🚨 LIVE FRAUD ALERTS
+      </div>
+      
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {currentAlerts.map((alert, i) => (
+          <div key={alert.id} style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            padding: "12px 16px",
+            background: darkMode ? "#7f1d1d22" : "#fef2f2",
+            border: `1px solid ${darkMode ? "#f8717133" : "#f8717166"}`,
+            borderRadius: 8,
+            borderLeft: `4px solid #f87171`,
+            animation: i === 0 && currentPage === totalPages - 1 ? "pulse 2s infinite" : "none",
+          }}>
+            <div style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: "#f87171",
+              animation: i === 0 && currentPage === totalPages - 1 ? "blink 1s infinite" : "none",
+            }} />
+            
+            <div style={{ flex: 1 }}>
+              <div style={{ 
+                fontSize: 12, 
+                fontWeight: 600, 
+                color: darkMode ? "#f87171" : "#dc2626",
+                marginBottom: 2 
+              }}>
+                {alert.id} - {alert.merchant}
+              </div>
+              <div style={{ fontSize: 11, color: darkMode ? "#94a3b8" : "#475569" }}>
+                ${alert.amount.toFixed(2)} • {alert.country} • Score: {alert.score}
+              </div>
+              {alert.reasons.length > 0 && (
+                <div style={{ fontSize: 10, color: darkMode ? "#64748b" : "#64748b", marginTop: 4 }}>
+                  ⚠ {alert.reasons.join(", ")}
+                </div>
+              )}
+            </div>
+            
+            <div style={{
+              fontSize: 10,
+              padding: "4px 8px",
+              background: darkMode ? "#7f1d1d" : "#dc2626",
+              color: "#fff",
+              borderRadius: 4,
+              fontWeight: 600,
+            }}>
+              FRAUD
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div style={{ 
+          display: "flex", 
+          justifyContent: "space-between", 
+          alignItems: "center",
+          marginTop: 16,
+          padding: "12px 16px",
+          background: darkMode ? "#1e293b" : "#f8fafc",
+          borderRadius: 8,
+        }}>
+          <button
+            onClick={handlePrev}
+            disabled={currentPage === 0}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              background: currentPage === 0 
+                ? (darkMode ? "#0f172a" : "#f1f5f9")
+                : (darkMode ? "#334155" : "#e2e8f0"),
+              border: `1px solid ${darkMode ? "#475569" : "#cbd5e1"}`,
+              borderRadius: 6,
+              color: currentPage === 0 
+                ? (darkMode ? "#475569" : "#94a3b8")
+                : (darkMode ? "#e2e8f0" : "#475569"),
+              fontSize: 11,
+              cursor: currentPage === 0 ? "not-allowed" : "pointer",
+              transition: "all 0.2s",
+            }}
+          >
+            ← Previous {alertsPerPage}
+          </button>
+          
+          <div style={{ fontSize: 11, color: darkMode ? "#94a3b8" : "#475569" }}>
+            Page {currentPage + 1} of {totalPages} • {processedTxns.length} total alerts
+          </div>
+          
+          <button
+            onClick={handleNext}
+            disabled={currentPage === totalPages - 1}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "6px 12px",
+              background: currentPage === totalPages - 1 
+                ? (darkMode ? "#0f172a" : "#f1f5f9")
+                : (darkMode ? "#334155" : "#e2e8f0"),
+              border: `1px solid ${darkMode ? "#475569" : "#cbd5e1"}`,
+              borderRadius: 6,
+              color: currentPage === totalPages - 1 
+                ? (darkMode ? "#475569" : "#94a3b8")
+                : (darkMode ? "#e2e8f0" : "#475569"),
+              fontSize: 11,
+              cursor: currentPage === totalPages - 1 ? "not-allowed" : "pointer",
+              transition: "all 0.2s",
+            }}
+          >
+            Next {alertsPerPage} →
+          </button>
+        </div>
+      )}
+      
+      <style jsx>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.8; }
+        }
+        @keyframes blink {
+          0%, 50%, 100% { opacity: 1; }
+          25%, 75% { opacity: 0.3; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 // ─── Enhanced Log Line with Dark Mode Support ────────────────────────────────────────
 function LogLine({ line, darkMode }) {
   const color = line.startsWith("[FRAUD]") ? "#f87171"
@@ -861,6 +1032,7 @@ export default function FraudDetectionAgent() {
         {activeTab === "dashboard" && (
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20 }}>
             <TransactionTimeline transactions={transactions} darkMode={darkMode} />
+            <FraudAlertsTicker transactions={transactions} darkMode={darkMode} />
             
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
               {/* Metrics Gauges */}
