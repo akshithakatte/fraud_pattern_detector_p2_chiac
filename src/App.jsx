@@ -3,7 +3,16 @@ import { Search, Filter, Download, Settings, Play, Pause, RotateCcw, TrendingUp,
 import jsPDF from 'jspdf';
 
 // ─── Synthetic Dataset Generator ───────────────────────────────────────────
-function generateTransactions(n = 200) {
+function generateTransactions(n = 200, seed = null) {
+  // Simple seeded random number generator for reproducibility
+  if (seed !== null) {
+    let seedValue = seed;
+    Math.random = () => {
+      seedValue = (seedValue * 9301 + 49297) % 233280;
+      return seedValue / 233280;
+    };
+  }
+  
   const merchants = ["Amazon", "Walmart", "Starbucks", "Shell", "Netflix", "Uber", "Casino Royale", "QuickCash ATM", "Unknown Vendor", "BestBuy"];
   const countries = ["US", "US", "US", "US", "UK", "CA", "NG", "RU", "CN", "US"];
   const txns = [];
@@ -114,7 +123,8 @@ function LogLine({ line, darkMode }) {
 export default function FraudDetectionAgent() {
   const [numTransactions, setNumTransactions] = useState(120);
   const [inputValue, setInputValue] = useState(numTransactions.toString());
-  const [transactions, setTransactions] = useState(() => generateTransactions(numTransactions));
+  const [seed, setSeed] = useState(24); // Default seed for reproducibility
+  const [transactions, setTransactions] = useState(() => generateTransactions(numTransactions, seed));
   const [running, setRunning] = useState(false);
   const [cursor, setCursor] = useState(0);
   const [logs, setLogs] = useState(["[AGENT] Fraud Detection Agent initialized. Press RUN to start analysis."]);
@@ -186,8 +196,8 @@ export default function FraudDetectionAgent() {
     clearInterval(intervalRef.current);
     setRunning(false);
     setCursor(0);
-    setTransactions(generateTransactions(numTransactions));
-    setLogs(["[AGENT] Reset. New synthetic dataset generated. Press RUN to analyze."]);
+    setTransactions(generateTransactions(numTransactions, seed));
+    setLogs(["[AGENT] Reset. New synthetic dataset generated with seed " + seed + ". Press RUN to analyze."]);
   };
 
   const fraudTxns = transactions.filter(t => t.flaggedAsFraud && t.status === "done");
@@ -442,8 +452,8 @@ export default function FraudDetectionAgent() {
                     style={{
                       background: darkMode ? "#1e293b" : "#fff",
                       border: darkMode ? "1px solid #334155" : "1px solid #cbd5e1",
-                      color: darkMode ? "#94a3b8" : "#1e293b", padding: "4px 8px",
-                      borderRadius: 4, fontSize: 11, width: "100%",
+                      color: darkMode ? "#94a3b8" : "#1e293b", padding: "4px 6px",
+                      borderRadius: 4, fontSize: 11, width: "80px", height: "28px",
                     }}
                   />
                 </div>
@@ -470,23 +480,36 @@ export default function FraudDetectionAgent() {
               style={{
                 background: darkMode ? "#1e293b" : "#fff",
                 border: darkMode ? "1px solid #334155" : "1px solid #cbd5e1",
-                color: darkMode ? "#94a3b8" : "#1e293b", padding: "8px",
-                borderRadius: 4, fontSize: 12, width: "100%",
+                color: darkMode ? "#94a3b8" : "#1e293b", padding: "4px 6px",
+                borderRadius: 4, fontSize: 12, width: "120px", height: "32px",
               }}
             />
             <div style={{ fontSize: 10, color: darkMode ? "#475569" : "#64748b", marginTop: 4 }}>
               50–500 transactions. Changes apply on Reset.
             </div>
           </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, color: darkMode ? "#64748b" : "#475569", marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}>
+              <Brain style={{ width: 14, height: 14 }} /> Random Seed
+            </div>
+            <input
+              type="number"
+              value={seed}
+              onChange={e => setSeed(Number(e.target.value))}
+              disabled={running}
+              style={{
+                background: darkMode ? "#1e293b" : "#fff",
+                border: darkMode ? "1px solid #334155" : "1px solid #cbd5e1",
+                color: darkMode ? "#94a3b8" : "#1e293b", padding: "4px 6px",
+                borderRadius: 4, fontSize: 12, width: "120px", height: "32px",
+              }}
+            />
+            <div style={{ fontSize: 10, color: darkMode ? "#475569" : "#64748b", marginTop: 4 }}>
+              Use same seed for reproducible datasets.
+            </div>
+          </div>
         </div>
       )}
-      <div style={{ height: 3, background: darkMode ? "#0f172a" : "#e2e8f0" }}>
-        <div style={{
-          height: "100%", width: (processed / transactions.length * 100) + '%',
-          background: "linear-gradient(90deg, #6366f1, #22d3ee)",
-          transition: "width 0.1s",
-        }} />
-      </div>
 
       {/* Enhanced Stats Row */}
       <div style={{
@@ -498,7 +521,7 @@ export default function FraudDetectionAgent() {
           { label: "TOTAL TXNs", value: transactions.length, color: "#818cf8", icon: Database },
           { label: "PROCESSED", value: processed, color: "#22d3ee", icon: Activity },
           { label: "FLAGGED FRAUD", value: flagged, color: "#f87171", icon: AlertTriangle },
-          { label: "FRAUD RATE", value: processed ? `${((flagged / processed) * 100).toFixed(1)}%` : "—", color: "#fb923c", icon: TrendingUp },
+          { label: "FRAUD RATE", value: processed ? (Math.round((flagged / processed) * 1000) / 10 + "%") : "—", color: "#fb923c", icon: TrendingUp },
           { label: "PENDING", value: transactions.length - processed, color: "#64748b", icon: Clock },
         ].map(s => (
           <div key={s.label} style={{ background: darkMode ? "#030712" : "#fff", padding: "16px 24px", transition: "all 0.2s", ":hover": { transform: "translateY(-2px)" } }}>
