@@ -1,442 +1,383 @@
-import { useState, useCallback } from "react";
+import { useState } from "react";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const MERCHANTS = [
-  "Amazon", "Walmart", "Netflix", "Casino Royale", "QuickCash ATM",
-  "Starbucks", "Apple Store", "Unknown Vendor", "Best Buy", "Target",
-  "Steam", "Uber", "Spotify", "Shell Gas", "CVS Pharmacy",
-];
-const COUNTRIES = ["US", "UK", "CA", "NG", "RU", "CN", "IN", "BR", "UA", "DE"];
-const FRAUD_MERCHANTS = ["Casino Royale", "QuickCash ATM", "Unknown Vendor"];
-
-const LOG_STEPS = [
-  "Initializing fraud detection agent...",
-  "Loading transaction dataset (120 records)...",
-  "Applying rule-based scoring engine...",
-  "Evaluating high-amount transactions...",
-  "Checking country risk profiles...",
-  "Analyzing transaction timestamps...",
-  "Scanning merchant risk flags...",
-  "Detecting rapid transaction sequences...",
-  "Calculating precision / recall metrics...",
-  "Agent run complete. Dashboard updated.",
-];
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function generateTransactions(count = 120) {
-  return Array.from({ length: count }, (_, i) => {
-    const merchant = MERCHANTS[Math.floor(Math.random() * MERCHANTS.length)];
-    const country = COUNTRIES[Math.floor(Math.random() * COUNTRIES.length)];
-    const hour = Math.floor(Math.random() * 24);
-    const amount = Math.round(Math.random() * 2000 + 10);
-    const prevTxnGap = Math.round(Math.random() * 60);
-    const isTrueFraud =
-      FRAUD_MERCHANTS.includes(merchant) ||
-      (amount > 1500 && hour < 4) ||
-      ((country === "NG" || country === "UA") && amount > 800);
-    return {
-      id: `TXN-${String(i + 1).padStart(4, "0")}`,
-      merchant, country, hour, amount, prevTxnGap, isTrueFraud,
-    };
-  });
-}
-
-function scoreTransaction(txn, threshold = 50, weights = {}) {
-  let score = 0;
-  if (txn.amount > 1000) score += weights.highAmount ?? 35;
-  if (txn.hour >= 0 && txn.hour <= 4) score += weights.oddHour ?? 25;
-  if (!["US", "UK", "CA"].includes(txn.country)) score += weights.riskyCountry ?? 30;
-  if (txn.prevTxnGap < 5) score += weights.rapidTxn ?? 20;
-  if (FRAUD_MERCHANTS.includes(txn.merchant)) score += weights.suspiciousMerchant ?? 25;
-  score = Math.min(score, 100);
-  return { score, flaggedAsFraud: score >= threshold };
-}
-
-function calcMetrics(transactions) {
-  let tp = 0, fp = 0, fn = 0, tn = 0;
-  transactions.forEach(({ isTrueFraud, flaggedAsFraud }) => {
-    if (isTrueFraud && flaggedAsFraud) tp++;
-    else if (!isTrueFraud && flaggedAsFraud) fp++;
-    else if (isTrueFraud && !flaggedAsFraud) fn++;
-    else tn++;
-  });
-  const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
-  const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
-  const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
-  const accuracy = (tp + tn) / transactions.length;
-  return { precision, recall, f1, accuracy, tp, fp, fn, tn };
-}
-
-// ─── Sub-components ───────────────────────────────────────────────────────────
-function Gauge({ value, label, color, isDark }) {
+// ─── Gauge Component ────────────────────────────────────────────────────────
+function Gauge({ value, label, color }) {
   const pct = Math.round(value * 100);
-  const r = 34, cx = 42, cy = 42, circ = 2 * Math.PI * r;
+  const r = 36, cx = 44, cy = 44;
+  const circ = 2 * Math.PI * r;
   const dash = (pct / 100) * circ;
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-      <svg width="84" height="84" viewBox="0 0 84 84">
-        <circle cx={cx} cy={cy} r={r} fill="none"
-          stroke={isDark ? "#1e293b" : "#e2e8f0"} strokeWidth="7" />
-        <circle cx={cx} cy={cy} r={r} fill="none"
-          stroke={color} strokeWidth="7"
-          strokeDasharray={`${dash.toFixed(1)} ${circ.toFixed(1)}`}
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+      <svg width={88} height={88} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1e293b" strokeWidth={8} />
+        <circle
+          cx={cx} cy={cy} r={r} fill="none"
+          stroke={color} strokeWidth={8}
+          strokeDasharray={`${dash} ${circ - dash}`}
           strokeLinecap="round"
-          transform={`rotate(-90 ${cx} ${cy})`}
-          style={{ transition: "stroke-dasharray 1s ease" }} />
-        <text x={cx} y={cy + 5} textAnchor="middle" fontSize="13" fontWeight="600"
-          fill={isDark ? "#f1f5f9" : "#0f172a"}>
-          {pct}%
-        </text>
+          style={{ transition: "stroke-dasharray 0.6s ease" }}
+        />
       </svg>
-      <span style={{
-        fontSize: 11, fontWeight: 600, letterSpacing: "0.07em",
-        textTransform: "uppercase", color: isDark ? "#64748b" : "#94a3b8",
-      }}>
-        {label}
-      </span>
+      <div style={{ marginTop: -60, fontSize: 18, fontWeight: 800, color, fontFamily: "monospace" }}>{pct}%</div>
+      <div style={{ marginTop: 36, fontSize: 11, color: "#64748b", letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</div>
     </div>
   );
 }
 
-function RiskBar({ label, count, total, color, isDark }) {
-  const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-        <span style={{ fontSize: 12, color: isDark ? "#94a3b8" : "#64748b" }}>{label}</span>
-        <span style={{ fontSize: 12, fontWeight: 700, color, fontFamily: "monospace" }}>{count}</span>
-      </div>
-      <div style={{
-        height: 6, borderRadius: 3,
-        background: isDark ? "#1e293b" : "#e2e8f0", overflow: "hidden",
-      }}>
-        <div style={{
-          height: "100%", width: `${pct}%`, background: color,
-          borderRadius: 3, transition: "width 1s ease",
-        }} />
-      </div>
-    </div>
-  );
-}
+// ─── Transaction Timeline ───────────────────────────────────────────────────
+function TransactionTimeline({ transactions, darkMode }) {
+  const processedTxns = transactions
+    .filter(t => t.status === "done")
+    .sort((a, b) => a.timestamp - b.timestamp);
 
-function MetricCard({ label, value, color, isDark }) {
-  return (
-    <div style={{
-      background: isDark ? "#0f2040" : "#f8fafc",
-      border: `1px solid ${isDark ? "#1a3a5c" : "#e2e8f0"}`,
-      borderRadius: 12, padding: "16px 20px",
-    }}>
-      <div style={{
-        fontSize: 11, color: isDark ? "#64748b" : "#94a3b8",
-        marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.06em",
-      }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 26, fontWeight: 700, color, fontFamily: "monospace" }}>
-        {value}
-      </div>
-    </div>
-  );
-}
+  if (processedTxns.length === 0) return null;
 
-// ─── Main Dashboard Component ─────────────────────────────────────────────────
-export default function Dashboard({ theme = "dark", onThemeToggle }) {
-  const isDark = theme === "dark";
-  const [status, setStatus] = useState("idle");
-  const [logLines, setLogLines] = useState([]);
-  const [metrics, setMetrics] = useState(null);
-  const [scored, setScored] = useState([]);
-  const [elapsed, setElapsed] = useState(null);
-  const threshold = 50;
-
-  const bg      = isDark ? "#040d1a" : "#f0f4f8";
-  const surface = isDark ? "#0a1628" : "#ffffff";
-  const border  = isDark ? "#1a3a5c" : "#e2e8f0";
-  const text    = isDark ? "#e2e8f0" : "#0f172a";
-  const muted   = isDark ? "#64748b" : "#94a3b8";
-  const blue    = "#3b82f6";
-  const green   = "#10b981";
-  const orange  = "#f59e0b";
-  const red     = "#ef4444";
-  const purple  = "#8b5cf6";
-
-  const flaggedCount = scored.filter(t => t.flaggedAsFraud).length;
-  const highRisk = scored.filter(t => t.score >= 75).length;
-  const medRisk  = scored.filter(t => t.score >= 40 && t.score < 75).length;
-  const lowRisk  = scored.filter(t => t.score < 40).length;
-
-  const runAgent = useCallback(() => {
-    if (status === "running") return;
-    setStatus("running");
-    setLogLines([]);
-    setMetrics(null);
-    setScored([]);
-    const start = Date.now();
-    const transactions = generateTransactions(120);
-    let step = 0;
-
-    const interval = setInterval(() => {
-      if (step < LOG_STEPS.length) {
-        setLogLines(prev => [...prev, { text: LOG_STEPS[step], index: step }]);
-        step++;
-      } else {
-        clearInterval(interval);
-        const results = transactions.map(txn => ({
-          ...txn,
-          ...scoreTransaction(txn, threshold),
-        }));
-        setScored(results);
-        setMetrics(calcMetrics(results));
-        setElapsed(((Date.now() - start) / 1000).toFixed(2));
-        setStatus("done");
-      }
-    }, 280);
-  }, [status]);
+  const maxCircles = 80;
+  const displayTxns = processedTxns.length > maxCircles
+    ? processedTxns.slice(-maxCircles)
+    : processedTxns;
 
   return (
     <div style={{
-      minHeight: "100vh", background: bg, color: text,
-      fontFamily: "'Segoe UI', system-ui, sans-serif",
-      transition: "all 0.3s",
+      background: darkMode ? "#0f172a" : "#f1f5f9",
+      border: "1px solid #1e293b", borderRadius: 12, padding: 24,
     }}>
-      {/* Header */}
+      <div style={{ fontSize: 11, color: darkMode ? "#475569" : "#64748b", letterSpacing: "0.1em", marginBottom: 20 }}>
+        TRANSACTION FLEET TIMELINE
+      </div>
       <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "16px 32px", background: surface,
-        borderBottom: `1px solid ${border}`,
-        position: "sticky", top: 0, zIndex: 100,
+        display: "flex", alignItems: "center", flexWrap: "wrap",
+        gap: 4, position: "relative", minHeight: 30,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 18,
+        {displayTxns.map((txn) => (
+          <div key={txn.id} style={{
+            width: 14, height: 14, borderRadius: "50%",
+            background: txn.flaggedAsFraud ? "#f87171" : "#34d399",
+            opacity: txn.flaggedAsFraud ? 1 : 0.7,
+            border: txn.isActualFraud ? "2px solid #fbbf24" : "none",
+            cursor: "pointer", flexShrink: 0,
+          }}
+            title={`${txn.id} - ${txn.merchant} - $${txn.amount.toFixed(2)} - ${txn.flaggedAsFraud ? "FRAUD" : "CLEAR"}`}
+          />
+        ))}
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", gap: 24, marginTop: 16 }}>
+        {[
+          { color: "#34d399", opacity: 0.7, border: "none", label: "Clear Transaction" },
+          { color: "#f87171", opacity: 1,   border: "none", label: "Flagged Fraud" },
+          { color: "#34d399", opacity: 0.7, border: "2px solid #fbbf24", label: "Actual Fraud (border)" },
+        ].map(({ color, opacity, border, label }) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: darkMode ? "#94a3b8" : "#64748b" }}>
+            <div style={{ width: 12, height: 12, background: color, borderRadius: "50%", opacity, border }} />
+            {label}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", gap: 32, marginTop: 12, fontSize: 10, color: darkMode ? "#64748b" : "#475569" }}>
+        <span>Total: {processedTxns.length}</span>
+        <span>Showing: {displayTxns.length}</span>
+        <span>Fraud: {processedTxns.filter(t => t.flaggedAsFraud).length}</span>
+        <span>Actual Fraud: {processedTxns.filter(t => t.isActualFraud).length}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Fraud Alerts Ticker ────────────────────────────────────────────────────
+function FraudAlertsTicker({ transactions, darkMode }) {
+  const [currentPage, setCurrentPage] = useState(0);
+  const processedTxns = transactions.filter(t => t.status === "done" && t.flaggedAsFraud);
+
+  if (processedTxns.length === 0) return null;
+
+  const alertsPerPage = 5;
+  const totalPages = Math.ceil(processedTxns.length / alertsPerPage);
+  const startIndex = (totalPages - 1 - currentPage) * alertsPerPage;
+  const currentAlerts = processedTxns.slice(startIndex, startIndex + alertsPerPage).reverse();
+
+  return (
+    <div style={{
+      background: darkMode ? "#0f172a" : "#f1f5f9",
+      border: "1px solid #1e293b", borderRadius: 12, padding: 20,
+    }}>
+      <div style={{ fontSize: 11, color: darkMode ? "#475569" : "#64748b", letterSpacing: "0.1em", marginBottom: 16 }}>
+        🚨 LIVE FRAUD ALERTS
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {currentAlerts.map((alert) => (
+          <div key={alert.id} style={{
+            display: "flex", alignItems: "center", gap: 12,
+            padding: "12px 16px",
+            background: darkMode ? "#7f1d1d22" : "#fef2f2",
+            border: `1px solid ${darkMode ? "#f8717133" : "#f8717166"}`,
+            borderRadius: 8, borderLeft: "4px solid #f87171",
           }}>
-            🛡️
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>Fraud Pattern Detector</div>
-            <div style={{ fontSize: 11, color: muted }}>Detection Dashboard</div>
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {elapsed && (
-            <span style={{ fontSize: 12, color: muted, fontFamily: "monospace" }}>
-              Last run: {elapsed}s
-            </span>
-          )}
-          {onThemeToggle && (
-            <button onClick={onThemeToggle} style={{
-              background: isDark ? "#1e293b" : "#f1f5f9",
-              border: `1px solid ${border}`, borderRadius: 8,
-              padding: "6px 12px", cursor: "pointer", color: text, fontSize: 13,
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#f87171", flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: darkMode ? "#f87171" : "#dc2626", marginBottom: 2 }}>
+                {alert.id} - {alert.merchant}
+              </div>
+              <div style={{ fontSize: 11, color: darkMode ? "#94a3b8" : "#475569" }}>
+                ${alert.amount.toFixed(2)} • {alert.country} • Score: {alert.score}
+              </div>
+              {alert.reasons.length > 0 && (
+                <div style={{ fontSize: 10, color: darkMode ? "#64748b" : "#64748b", marginTop: 4 }}>
+                  ⚠ {alert.reasons.join(", ")}
+                </div>
+              )}
+            </div>
+            <div style={{
+              fontSize: 10, padding: "4px 8px",
+              background: darkMode ? "#7f1d1d" : "#dc2626",
+              color: "#fff", borderRadius: 4, fontWeight: 600,
             }}>
-              {isDark ? "☀️ Light" : "🌙 Dark"}
-            </button>
-          )}
+              FRAUD
+            </div>
+          </div>
+        ))}
+      </div>
+      {totalPages > 1 && (
+        <div style={{
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+          marginTop: 14, padding: "10px 14px",
+          background: darkMode ? "#1e293b" : "#f8fafc", borderRadius: 8,
+        }}>
+          <button
+            onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+            disabled={currentPage === 0}
+            style={{
+              padding: "6px 12px", borderRadius: 6, fontSize: 11,
+              background: darkMode ? "#334155" : "#e2e8f0",
+              border: `1px solid ${darkMode ? "#475569" : "#cbd5e1"}`,
+              color: darkMode ? "#e2e8f0" : "#475569",
+              cursor: currentPage === 0 ? "not-allowed" : "pointer",
+              opacity: currentPage === 0 ? 0.5 : 1,
+            }}>
+            ← Previous {alertsPerPage}
+          </button>
+          <div style={{ fontSize: 11, color: darkMode ? "#94a3b8" : "#475569" }}>
+            Page {currentPage + 1} of {totalPages} • {processedTxns.length} total alerts
+          </div>
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
+            disabled={currentPage === totalPages - 1}
+            style={{
+              padding: "6px 12px", borderRadius: 6, fontSize: 11,
+              background: darkMode ? "#334155" : "#e2e8f0",
+              border: `1px solid ${darkMode ? "#475569" : "#cbd5e1"}`,
+              color: darkMode ? "#e2e8f0" : "#475569",
+              cursor: currentPage === totalPages - 1 ? "not-allowed" : "pointer",
+              opacity: currentPage === totalPages - 1 ? 0.5 : 1,
+            }}>
+            Next {alertsPerPage} →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Merchant Analysis ──────────────────────────────────────────────────────
+function MerchantAnalysis({ transactions, darkMode }) {
+  const processedTxns = transactions.filter(t => t.status === "done");
+  if (processedTxns.length === 0) return null;
+
+  const merchantData = {};
+  processedTxns.forEach(txn => {
+    if (!merchantData[txn.merchant]) {
+      merchantData[txn.merchant] = { total: 0, fraud: 0, actualFraud: 0, totalAmount: 0 };
+    }
+    merchantData[txn.merchant].total++;
+    merchantData[txn.merchant].totalAmount += txn.amount;
+    if (txn.flaggedAsFraud) merchantData[txn.merchant].fraud++;
+    if (txn.isActualFraud) merchantData[txn.merchant].actualFraud++;
+  });
+
+  const sortedMerchants = Object.entries(merchantData)
+    .map(([merchant, data]) => ({
+      merchant, ...data,
+      fraudRate: (data.fraud / data.total) * 100,
+      avgAmount: data.totalAmount / data.total,
+    }))
+    .sort((a, b) => b.fraudRate - a.fraudRate);
+
+  return (
+    <div style={{
+      background: darkMode ? "#0f172a" : "#f1f5f9",
+      border: "1px solid #1e293b", borderRadius: 12, padding: 24,
+    }}>
+      <div style={{ fontSize: 11, color: darkMode ? "#475569" : "#64748b", letterSpacing: "0.1em", marginBottom: 20 }}>
+        MERCHANT ANALYSIS
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
+        {sortedMerchants.map(({ merchant, total, fraud, actualFraud, fraudRate, avgAmount, totalAmount }) => {
+          const isHighRisk = fraudRate > 30;
+          const barColor = isHighRisk ? "#f87171" : fraudRate > 15 ? "#fb923c" : "#34d399";
+          return (
+            <div key={merchant} style={{
+              background: darkMode ? "#1e293b" : "#fff",
+              border: `1px solid ${isHighRisk ? "#f8717133" : darkMode ? "#334155" : "#e2e8f0"}`,
+              borderRadius: 8, padding: 16,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: darkMode ? "#e2e8f0" : "#1e293b" }}>{merchant}</div>
+                <div style={{
+                  fontSize: 10, padding: "2px 6px", borderRadius: 4,
+                  background: isHighRisk ? "#7f1d1d" : fraudRate > 15 ? "#78350f" : "#14532d",
+                  color: isHighRisk ? "#f87171" : fraudRate > 15 ? "#fb923c" : "#34d399",
+                }}>
+                  {fraudRate.toFixed(1)}% fraud
+                </div>
+              </div>
+              <div style={{ height: 6, background: darkMode ? "#0f172a" : "#f1f5f9", borderRadius: 3, overflow: "hidden", marginBottom: 12 }}>
+                <div style={{ height: "100%", width: `${Math.min(fraudRate, 100)}%`, background: barColor, borderRadius: 3, transition: "width 0.3s" }} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 11 }}>
+                {[
+                  { label: "Transactions", value: total,                          color: darkMode ? "#e2e8f0" : "#1e293b" },
+                  { label: "Flagged Fraud", value: fraud,                         color: "#f87171" },
+                  { label: "Avg Amount",    value: `$${avgAmount.toFixed(0)}`,    color: darkMode ? "#e2e8f0" : "#1e293b" },
+                  { label: "Total Volume",  value: `$${totalAmount.toFixed(0)}`,  color: darkMode ? "#e2e8f0" : "#1e293b" },
+                ].map(({ label, value, color }) => (
+                  <div key={label}>
+                    <div style={{ color: darkMode ? "#64748b" : "#475569" }}>{label}</div>
+                    <div style={{ fontWeight: 600, color }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              {actualFraud > 0 && (
+                <div style={{ marginTop: 8, fontSize: 10, color: darkMode ? "#fbbf24" : "#f59e0b" }}>
+                  ⚠ {actualFraud} actual fraud case{actualFraud > 1 ? "s" : ""}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{
+        marginTop: 16, padding: 12,
+        background: darkMode ? "#1e293b" : "#f8fafc",
+        borderRadius: 8, fontSize: 11, color: darkMode ? "#94a3b8" : "#475569",
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-around", textAlign: "center" }}>
+          {[
+            { label: "Unique Merchants",    value: sortedMerchants.length,                                          color: darkMode ? "#e2e8f0" : "#1e293b" },
+            { label: "High Risk (>30%)",    value: sortedMerchants.filter(m => m.fraudRate > 30).length,            color: "#f87171" },
+            { label: "Medium Risk (15-30%)", value: sortedMerchants.filter(m => m.fraudRate > 15 && m.fraudRate <= 30).length, color: "#fb923c" },
+            { label: "Low Risk (≤15%)",     value: sortedMerchants.filter(m => m.fraudRate <= 15).length,           color: "#34d399" },
+          ].map(({ label, value, color }) => (
+            <div key={label}>
+              <div style={{ fontWeight: 600, color }}>{value}</div>
+              <div>{label}</div>
+            </div>
+          ))}
         </div>
       </div>
+    </div>
+  );
+}
 
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "24px 20px" }}>
+// ─── Main Dashboard Component ───────────────────────────────────────────────
+export default function Dashboard({ transactions, metrics, darkMode }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20 }}>
 
-        {/* Run Agent Panel */}
+      <TransactionTimeline transactions={transactions} darkMode={darkMode} />
+
+      <FraudAlertsTicker transactions={transactions} darkMode={darkMode} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+
+        {/* Gauges */}
         <div style={{
-          background: surface, border: `1px solid ${border}`,
-          borderRadius: 16, padding: "24px", marginBottom: 20,
+          background: darkMode ? "#0f172a" : "#f1f5f9",
+          border: "1px solid #1e293b", borderRadius: 12, padding: 24,
         }}>
-          <div style={{
-            display: "flex", alignItems: "flex-start",
-            justifyContent: "space-between", flexWrap: "wrap", gap: 16,
-          }}>
+          <div style={{ fontSize: 11, color: darkMode ? "#475569" : "#64748b", letterSpacing: "0.1em", marginBottom: 24 }}>
+            PRECISION / RECALL / F1 / ACCURACY
+          </div>
+          {metrics ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-around" }}>
+                <Gauge value={metrics.precision} label="Precision" color="#6366f1" />
+                <Gauge value={metrics.recall}    label="Recall"    color="#22d3ee" />
+                <Gauge value={metrics.f1}        label="F1 Score"  color="#f59e0b" />
+                <Gauge value={metrics.accuracy}  label="Accuracy"  color="#34d399" />
+              </div>
+              <div style={{
+                display: "grid", gridTemplateColumns: "repeat(4, 1fr)",
+                gap: 12, marginTop: 28, paddingTop: 20, borderTop: "1px solid #1e293b",
+              }}>
+                {[
+                  { l: "True Positives",  v: metrics.tp, c: "#34d399" },
+                  { l: "False Positives", v: metrics.fp, c: "#f87171" },
+                  { l: "False Negatives", v: metrics.fn, c: "#fb923c" },
+                  { l: "True Negatives",  v: metrics.tn, c: "#818cf8" },
+                ].map(m => (
+                  <div key={m.l} style={{ textAlign: "center" }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: m.c }}>{m.v}</div>
+                    <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>{m.l}</div>
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div style={{ color: darkMode ? "#334155" : "#94a3b8", textAlign: "center", paddingTop: 40 }}>
+              Run agent to see metrics
+            </div>
+          )}
+        </div>
+
+        {/* Confusion Matrix */}
+        <div style={{
+          background: darkMode ? "#0f172a" : "#f1f5f9",
+          border: "1px solid #1e293b", borderRadius: 12, padding: 24,
+        }}>
+          <div style={{ fontSize: 11, color: darkMode ? "#475569" : "#64748b", letterSpacing: "0.1em", marginBottom: 20 }}>
+            CONFUSION MATRIX
+          </div>
+          {metrics ? (
             <div>
-              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>
-                Run Fraud Agent
-              </div>
-              <div style={{ fontSize: 13, color: muted }}>
-                Scores 120 synthetic transactions using rule-based detection algorithm
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              {status === "done" && (
-                <button onClick={runAgent} style={{
-                  padding: "10px 18px", background: "transparent",
-                  border: `1px solid ${border}`, borderRadius: 10,
-                  color: text, fontSize: 13, fontWeight: 600, cursor: "pointer",
-                }}>
-                  🔄 Re-run
-                </button>
-              )}
-              <button
-                onClick={runAgent}
-                disabled={status === "running"}
-                style={{
-                  padding: "10px 24px",
-                  background: status === "running"
-                    ? (isDark ? "#1a3a5c" : "#bfdbfe")
-                    : "linear-gradient(135deg, #2563eb, #7c3aed)",
-                  border: "none", borderRadius: 10,
-                  color: "#fff", fontSize: 13, fontWeight: 700,
-                  cursor: status === "running" ? "not-allowed" : "pointer",
-                  opacity: status === "running" ? 0.7 : 1,
-                  display: "flex", alignItems: "center", gap: 8,
-                }}
-              >
-                {status === "running" ? "⏳ Running..." : "▶ Run Agent"}
-              </button>
-            </div>
-          </div>
-
-          {/* Agent Log */}
-          {logLines.length > 0 && (
-            <div style={{
-              marginTop: 18,
-              background: isDark ? "#020810" : "#f8fafc",
-              border: `1px solid ${border}`,
-              borderRadius: 10, padding: "12px 16px",
-              maxHeight: 200, overflowY: "auto",
-              fontFamily: "monospace", fontSize: 12,
-            }}>
-              {logLines.map((line, i) => (
-                <div key={i} style={{
-                  padding: "3px 0",
-                  color: i === logLines.length - 1
-                    ? (status === "done" ? green : blue)
-                    : muted,
-                }}>
-                  {i === logLines.length - 1 && status === "done" ? "✅" : "▸"} {line.text}
+              <div style={{ display: "grid", gridTemplateColumns: "80px 1fr 1fr", gap: 8, fontSize: 11 }}>
+                <div />
+                <div style={{ color: "#64748b", textAlign: "center" }}>Predicted: FRAUD</div>
+                <div style={{ color: "#64748b", textAlign: "center" }}>Predicted: LEGIT</div>
+                <div style={{ color: "#64748b", display: "flex", alignItems: "center" }}>Actual: FRAUD</div>
+                <div style={{ background: darkMode ? "#14532d55" : "#d1fae5", border: darkMode ? "1px solid #22c55e44" : "1px solid #16a34a", borderRadius: 8, padding: "20px 0", textAlign: "center" }}>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: darkMode ? "#34d399" : "#166534" }}>{metrics.tp}</div>
+                  <div style={{ fontSize: 10, color: darkMode ? "#16a34a" : "#166534" }}>True Positive</div>
                 </div>
-              ))}
+                <div style={{ background: darkMode ? "#7f1d1d55" : "#fee2e2", border: darkMode ? "1px solid #ef444444" : "1px solid #dc2626", borderRadius: 8, padding: "20px 0", textAlign: "center" }}>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: darkMode ? "#f87171" : "#b91c1c" }}>{metrics.fn}</div>
+                  <div style={{ fontSize: 10, color: darkMode ? "#dc2626" : "#b91c1c" }}>False Negative</div>
+                </div>
+                <div style={{ color: "#64748b", display: "flex", alignItems: "center" }}>Actual: LEGIT</div>
+                <div style={{ background: darkMode ? "#7f1d1d55" : "#fee2e2", border: darkMode ? "1px solid #ef444444" : "1px solid #dc2626", borderRadius: 8, padding: "20px 0", textAlign: "center" }}>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: darkMode ? "#f87171" : "#b91c1c" }}>{metrics.fp}</div>
+                  <div style={{ fontSize: 10, color: darkMode ? "#dc2626" : "#b91c1c" }}>False Positive</div>
+                </div>
+                <div style={{ background: darkMode ? "#1e1b4b55" : "#dbeafe", border: darkMode ? "1px solid #6366f144" : "1px solid #2563eb", borderRadius: 8, padding: "20px 0", textAlign: "center" }}>
+                  <div style={{ fontSize: 28, fontWeight: 800, color: darkMode ? "#818cf8" : "#1e40af" }}>{metrics.tn}</div>
+                  <div style={{ fontSize: 10, color: darkMode ? "#6366f1" : "#1e40af" }}>True Negative</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 20, padding: 14, background: darkMode ? "#1e293b" : "#f8fafc", borderRadius: 8, fontSize: 12, color: darkMode ? "#94a3b8" : "#475569", lineHeight: 1.7 }}>
+                <strong style={{ color: darkMode ? "#f1f5f9" : "#1e293b" }}>Interpretation: </strong>
+                High precision means fewer false alarms. High recall means fewer missed frauds.
+                F1 balances both for real-world deployment decisions.
+              </div>
+            </div>
+          ) : (
+            <div style={{ color: "#334155", textAlign: "center", paddingTop: 60 }}>
+              Awaiting analysis...
             </div>
           )}
         </div>
-
-        {/* Metric Cards */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: 12, marginBottom: 20,
-        }}>
-          <MetricCard label="Total Transactions" value={scored.length || 120} color={blue}   isDark={isDark} />
-          <MetricCard label="Flagged as Fraud"   value={flaggedCount || "—"} color={red}    isDark={isDark} />
-          <MetricCard label="True Positives"     value={metrics?.tp ?? "—"} color={green}  isDark={isDark} />
-          <MetricCard label="False Positives"    value={metrics?.fp ?? "—"} color={orange} isDark={isDark} />
-        </div>
-
-        {/* Charts Row */}
-        <div style={{
-          display: "grid", gridTemplateColumns: "1fr 1fr",
-          gap: 16, marginBottom: 20,
-        }}>
-          {/* Performance Gauges */}
-          <div style={{
-            background: surface, border: `1px solid ${border}`,
-            borderRadius: 16, padding: "20px 24px",
-          }}>
-            <div style={{
-              fontWeight: 700, fontSize: 13, marginBottom: 16,
-              color: muted, textTransform: "uppercase", letterSpacing: "0.06em",
-            }}>
-              Performance Metrics
-            </div>
-            {metrics ? (
-              <div style={{
-                display: "grid", gridTemplateColumns: "1fr 1fr",
-                gap: 20, justifyItems: "center",
-              }}>
-                <Gauge value={metrics.precision} label="Precision" color={blue}   isDark={isDark} />
-                <Gauge value={metrics.recall}    label="Recall"    color={green}  isDark={isDark} />
-                <Gauge value={metrics.f1}        label="F1 Score"  color={purple} isDark={isDark} />
-                <Gauge value={metrics.accuracy}  label="Accuracy"  color={orange} isDark={isDark} />
-              </div>
-            ) : (
-              <div style={{
-                display: "flex", alignItems: "center", justifyContent: "center",
-                height: 180, color: muted, fontSize: 13,
-              }}>
-                Run the agent to see metrics
-              </div>
-            )}
-          </div>
-
-          {/* Right column */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* Confusion Matrix */}
-            <div style={{
-              background: surface, border: `1px solid ${border}`,
-              borderRadius: 16, padding: "20px 24px", flex: 1,
-            }}>
-              <div style={{
-                fontWeight: 700, fontSize: 13, marginBottom: 14,
-                color: muted, textTransform: "uppercase", letterSpacing: "0.06em",
-              }}>
-                Confusion Matrix
-              </div>
-              {metrics ? (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  {[
-                    { label: "True Positive",  value: metrics.tp, color: green,  bg: isDark ? "#052e16" : "#dcfce7" },
-                    { label: "False Positive", value: metrics.fp, color: orange, bg: isDark ? "#431407" : "#ffedd5" },
-                    { label: "False Negative", value: metrics.fn, color: red,    bg: isDark ? "#450a0a" : "#fee2e2" },
-                    { label: "True Negative",  value: metrics.tn, color: blue,   bg: isDark ? "#0c1a2e" : "#dbeafe" },
-                  ].map((cell, i) => (
-                    <div key={i} style={{
-                      background: cell.bg, borderRadius: 10, padding: "12px 14px",
-                    }}>
-                      <div style={{
-                        fontSize: 11, color: cell.color, fontWeight: 600,
-                        textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4,
-                      }}>
-                        {cell.label}
-                      </div>
-                      <div style={{ fontSize: 24, fontWeight: 700, color: cell.color, fontFamily: "monospace" }}>
-                        {cell.value}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ color: muted, fontSize: 13, textAlign: "center", padding: "20px 0" }}>
-                  No data yet
-                </div>
-              )}
-            </div>
-
-            {/* Risk Distribution */}
-            <div style={{
-              background: surface, border: `1px solid ${border}`,
-              borderRadius: 16, padding: "20px 24px", flex: 1,
-            }}>
-              <div style={{
-                fontWeight: 700, fontSize: 13, marginBottom: 14,
-                color: muted, textTransform: "uppercase", letterSpacing: "0.06em",
-              }}>
-                Risk Distribution
-              </div>
-              <RiskBar label="High Risk (score 75+)"    count={highRisk} total={scored.length || 120} color={red}    isDark={isDark} />
-              <RiskBar label="Medium Risk (score 40-74)" count={medRisk}  total={scored.length || 120} color={orange} isDark={isDark} />
-              <RiskBar label="Low Risk (score below 40)" count={lowRisk}  total={scored.length || 120} color={green}  isDark={isDark} />
-            </div>
-          </div>
-        </div>
-
-        {/* Status Bar */}
-        {status === "done" && metrics && (
-          <div style={{
-            background: isDark ? "#052e16" : "#dcfce7",
-            border: `1px solid ${isDark ? "#166534" : "#86efac"}`,
-            borderRadius: 12, padding: "14px 20px",
-            display: "flex", alignItems: "center", gap: 8,
-            fontSize: 13, color: green, flexWrap: "wrap",
-          }}>
-            ✅ Agent completed in <strong>{elapsed}s</strong> — processed{" "}
-            <strong>120</strong> transactions, flagged{" "}
-            <strong>{flaggedCount}</strong> as fraud with{" "}
-            <strong>{Math.round(metrics.precision * 100)}%</strong> precision
-            and <strong>{Math.round(metrics.recall * 100)}%</strong> recall.
-          </div>
-        )}
       </div>
+
+      <MerchantAnalysis transactions={transactions} darkMode={darkMode} />
+
     </div>
   );
 }
+
